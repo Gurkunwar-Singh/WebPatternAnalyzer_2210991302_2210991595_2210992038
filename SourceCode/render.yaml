@@ -1,0 +1,25 @@
+# render.yaml
+services:
+  - type: web
+    name: web-pattern-analyzer-api
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: 18.17.0
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: BROWSER_INSTANCES
+        value: 1
+      - key: ENVIRONMENT
+        value: production
+      - key: FRONTEND_URL
+        value: https://your-frontend.vercel.app
+      - key: LOG_LEVEL
+        value: info
+    healthCheckPath: /health
+    autoDeploy: true

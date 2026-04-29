@@ -1,0 +1,35 @@
+{
+  "env": {
+    "node": true,
+    "es2020": true,
+    "browser": true
+  },
+  "extends": [
+    "eslint:recommended",
+    "prettier"
+  ],
+  "parser": "@typescript-eslint/parser",
+  "parserOptions": {
+    "ecmaVersion": 2020,
+    "sourceType": "module",
+    "project": "./tsconfig.json"
+  },
+  "plugins": [
+    "@typescript-eslint",
+    "prettier"
+  ],
+  "rules": {
+    "@typescript-eslint/no-unused-vars": ["warn", { "argsIgnorePattern": "^_" }],
+    "@typescript-eslint/explicit-function-return-type": "warn",
+    "@typescript-eslint/no-explicit-any": "warn",
+    "no-console": "warn",
+    "no-debugger": "error",
+    "no-multiple-empty-lines": ["warn", { "max": 1, "maxEOF": 0, "maxBOF": 0 }],
+     "no-trailing-spaces": "warn"
+  },
+  "ignorePatterns": [
+    "dist/**/*",
+    "node_modules/**/*",
+    "*.js"
+  ]
+}
