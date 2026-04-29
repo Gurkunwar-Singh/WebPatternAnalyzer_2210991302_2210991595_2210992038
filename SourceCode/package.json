@@ -10,7 +10,7 @@
     "lint": "eslint \"src/**/*.{js,ts}\"",
     "lint:fix": "eslint \"src/**/*.{js,ts}\" --fix",
     "format": "prettier --write \"src/**/*.{js,ts,json}\"",
-    "postinstall": "npm run build ",
+   "postinstall": "npm run build && npx puppeteer browsers install chrome",
     "clean": "rm -rf dist",
     "rebuild": "npm run clean && npm run build"
   },
