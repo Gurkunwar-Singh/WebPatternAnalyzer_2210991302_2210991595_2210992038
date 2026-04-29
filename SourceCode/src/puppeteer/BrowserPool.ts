@@ -12,7 +12,36 @@ let BROWSER_INSTANCE_DEBUG_PORT_STARTING = parseInt(
 );
 const ENVIRONMENT = process.env.ENVIRONMENT || 'production';
 const PROXIES = process.env.PROXIES ? process.env.PROXIES.split(',') : [];
+// Add this function at the top of browserPool.ts
+function getChromePath(): string | undefined {
+  if (process.env.NODE_ENV !== 'production') return undefined;
+  
+  // Possible Chrome/Chromium paths on Render
+  const possiblePaths = [
+    '/opt/render/.cache/puppeteer/chrome/linux-147.0.7727.57/chrome-linux64/chrome',
+    '/usr/bin/google-chrome',
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+    process.env.PUPPETEER_EXECUTABLE_PATH,
+  ].filter(Boolean);
+  
+  for (const path of possiblePaths) {
+    try {
+      // Check if file exists
+      require('fs').accessSync(path, require('fs').constants.X_OK);
+      logger.info(`Found Chrome at: ${path}`);
+      return path;
+    } catch (err) {
+      // Path doesn't exist or isn't executable
+    }
+  }
+  
+  logger.warn('No Chrome executable found, relying on Puppeteer default');
+  return undefined;
+}
 
+// Then in initialize():
+const chromePath = getChromePath();
 class BrowserPool {
   private pool: BrowserPoolItem[] = [];
   private maxPoolSize: number;
@@ -73,10 +102,22 @@ class BrowserPool {
 //   logger.info('Browser pool initialized successfully');
 // }
 // src/utils/browserPool.ts
+// src/utils/browserPool.ts
+
+
+
 async initialize(): Promise<void> {
+
   if (this.isInitialized) return;
+  // Then in initialize():
+const chromePath = getChromePath();
 
   logger.info(`Initializing browser pool with ${this.maxPoolSize} instances`);
+  
+  // Determine Chrome path based on environment
+  // const chromePath = process.env.NODE_ENV === 'production'
+  //   ? '/opt/render/.cache/puppeteer/chrome/linux-147.0.7727.57/chrome-linux64/chrome'
+  //   : undefined;
   
   for (let i = 0; i < this.maxPoolSize; i++) {
     let launchArgs: string[] = [
@@ -89,11 +130,10 @@ async initialize(): Promise<void> {
     ];
 
     try {
-      // Let Puppeteer download and use its own Chromium
       const browser = await puppeteer.launch({
         headless: true,
         args: launchArgs,
-        // Remove executablePath - let Puppeteer handle it
+        executablePath: chromePath, // Use the specific Chrome path in production
       });
 
       this.pool.push({ browser, linkedPort: undefined });
@@ -106,7 +146,6 @@ async initialize(): Promise<void> {
 
   this.isInitialized = true;
 }
-
   async getBrowser(): Promise<BrowserPoolItem> {
     if (!this.isInitialized) {
       await this.initialize();
