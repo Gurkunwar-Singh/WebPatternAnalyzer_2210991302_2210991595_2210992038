@@ -1,180 +1,288 @@
 # Web Pattern Analyzer
 
-> Automated UX design pattern extraction from live websites using a headless browser pipeline.
+> CO-OP Industry Project — Module 2 | Chitkara University, Punjab
+> Supervised by **Dr. Lalit Sharma**, Department of Computer Science & Engineering
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Node.js](https://img.shields.io/badge/Node.js-20.x-green.svg)](https://nodejs.org)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue.svg)](https://www.typescriptlang.org)
+[![Deployed on Render](https://img.shields.io/badge/Backend-Render-46E3B7.svg)](https://render.com)
+[![Frontend on Vercel](https://img.shields.io/badge/Frontend-Vercel-black.svg)](https://vercel.com)
 
-A powerful tool to analyze any website's design patterns including colors, typography, accessibility, and layout.
+
+
+
 ---
 
-## What it does
+## Project Title
 
-Web Pattern Analyzer crawls any live URL with a headless Puppeteer browser and extracts structured design intelligence — no manual inspection, no external ML services.
+**Automated UX Design Pattern Extraction from Live Websites Using a Headless Browser Pipeline**
 
-**Extracted dimensions:**
+---
 
-| Dimension | Description |
+## Abstract
+
+Web Pattern Analyzer is a full-stack research tool that crawls any live URL using a headless Chromium browser and extracts structured design intelligence in real time — covering color palettes, typography, accessibility compliance, visual hierarchy, and layout patterns — without any manual inspection or external ML services.
+
+---
+
+## Live Demo
+
+| Service | URL | Status |
+|---|---|---|
+| Frontend | https://webpatternanalyzer.vercel.app | ✅ Live |
+| Backend API | https://webstyle-analyzer.onrender.com | ✅ Live |
+| Health check | https://webstyle-analyzer.onrender.com/health | ✅ Live |
+
+> **Note:** The backend runs on Render's free tier and may take 30–60 seconds to respond on the first request after inactivity (cold start). Subsequent requests are fast.
+
+---
+
+## Current Status
+
+| Feature | Status |
 |---|---|
-| Color palette | K-means clustering on RGB values from computed DOM styles |
-| Semantic theme | Background, text, and border colors per page zone (nav, header, buttons…) |
-| Visual hierarchy | Top 20 elements ranked by size × position × contrast weight |
-| Brand colors | Logo/hero dominant color signals |
-| CSS framework | Bootstrap, Tailwind, Bulma, Foundation fingerprinting |
-| Typography scale | Font sizes, modular scale ratio, primary family and weight |
-| Accessibility | WCAG 2.1 contrast pairs, average contrast ratio |
-| Layout patterns | Grid columns, flexbox direction, spacing tokens |
+| Headless browser extraction | ✅ Complete |
+| Color palette (k-means) | ✅ Complete |
+| Semantic theme extraction | ✅ Complete |
+| Typography scale detection | ✅ Complete |
+| WCAG accessibility analysis | ✅ Complete |
+| Visual hierarchy scoring | ✅ Complete |
+| CSS framework fingerprinting | ✅ Complete |
+| Layout pattern detection | ✅ Complete |
+| React frontend with 6 panels | ✅ Complete |
+| Deployed on Render + Vercel | ✅ Complete |
+| Memory optimization (512MB limit) | ✅ Complete |
+| Resource interception (images/fonts) | ✅ Complete |
+| Docker support | ✅ Complete |
+| Dark mode detection | 🔄 In progress |
+| Batch URL analysis | 📋 Planned |
+| ML design quality scoring | 📋 Planned |
 
 ---
 
-## Tech stack
+## What It Does
 
-- **Runtime** — Node.js 18+
-- **Language** — TypeScript
-- **Server** — Express.js (stateless REST API)
-- **Browser automation** — Puppeteer (headless Chromium)
-- **Logging** — Winston
-- **Config** — dotenv
+Web Pattern Analyzer crawls any live URL with a headless Puppeteer browser and extracts structured design intelligence across 8 dimensions:
+
+| Dimension | Method | Output |
+|---|---|---|
+| Color palette | K-means RGB clustering on computed DOM styles | 5–8 dominant colors |
+| Semantic theme | Per-zone style extraction (nav, header, footer, buttons) | Color + font per zone |
+| Visual hierarchy | Size × position × font-size scoring | Top 20 ranked elements |
+| Brand colors | Logo image parent background detection | High-importance color signals |
+| CSS framework | Class selector fingerprinting | Bootstrap / Tailwind / Bulma |
+| Typography scale | Modular ratio fitting on heading font sizes | Scale ratio + base size |
+| Accessibility | WCAG 2.1 AA contrast ratio (≥ 4.5:1) | Passing color pairs |
+| Layout patterns | Grid + flex computed property analysis | Column templates, gap, direction |
 
 ---
 
-## Project structure
+## Tech Stack
+
+### Backend
+| Technology | Purpose |
+|---|---|
+| Node.js 20.x | Runtime |
+| TypeScript 5.x | Language |
+| Express.js | REST API server |
+| Puppeteer 24.x | Headless Chrome automation |
+| Winston | Structured logging |
+| dotenv | Environment configuration |
+
+### Frontend
+| Technology | Purpose |
+|---|---|
+| React 18 | UI framework |
+| Vite | Build tool |
+| TypeScript | Language |
+
+### Infrastructure
+| Service | Purpose |
+|---|---|
+| Render | Backend hosting (free tier, 512MB RAM) |
+| Vercel | Frontend hosting |
+| GitHub | Source control |
+
+---
+
+## Project Structure
 
 ```
-src/
-├── server.ts               # Express app entry point
-├── type.ts                 # Shared TypeScript types
-├── routes/
-│   └── route.ts            # /health and /extract-theme endpoints
-├── puppeteer/
-│   └── BrowserPool.ts      # Round-robin browser instance pool
-└── utils/
-    ├── helpers.ts           # validateUrl, autoScroll, withTimeout, delay
-    └── logger.ts            # Winston logger (file + console)
+webstyle-research-paper/
+├── SourceCode/                   # Backend
+│   ├── src/
+│   │   ├── server.ts             # Express app entry, eager browser pool init
+│   │   ├── type.ts               # Shared TypeScript types
+│   │   ├── routes/
+│   │   │   └── route.ts          # /health and /extract-theme endpoints
+│   │   ├── puppeteer/
+│   │   │   └── BrowserPool.ts    # Round-robin Chrome instance pool
+│   │   └── utils/
+│   │       ├── helpers.ts        # validateUrl, withTimeout, autoScroll
+│   │       └── logger.ts         # Winston logger (file + console)
+│   ├── .puppeteerrc.cjs          # Chrome cache path (project-local for Render)
+│   ├── dockerfile                # Docker container config
+│   ├── render.yaml               # Render deployment config
+│   ├── Procfile                  # Process definition
+│   └── package.json
+│
+└── ui/                           # Frontend
+    ├── src/
+    │   ├── App.tsx               # Root component, URL input, health check
+    │   ├── types.ts              # ApiResponse type definitions
+    │   └── components/
+    │       └── panels/
+    │           ├── OverviewPanel.tsx
+    │           ├── ColorsPanel.tsx
+    │           ├── TypographyPanel.tsx
+    │           ├── AccessibilityPanel.tsx
+    │           ├── ContentPanel.tsx
+    │           └── LayoutPanel.tsx
+    ├── vite.config.ts
+    └── package.json
 ```
 
 ---
 
-## Getting started
+## Architecture
+
+```
+Browser (React UI)
+  │
+  │  POST /extract-theme { url }
+  ▼
+Express Server (Render)
+  │
+  ├── Validate URL
+  ├── Acquire browser from pool (round-robin, 30s timeout)
+  ├── Block images / fonts / media (memory optimization)
+  ├── page.goto(url, { waitUntil: 'domcontentloaded' })
+  │
+  └── page.evaluate()  ← runs inside target site's browser context
+        │
+        ├── ALL_ELEMENTS = querySelectorAll(*).slice(0, 400)  ← memory cap
+        │
+        ├── extractTextContent()        h1–h6, p, li → markdown
+        ├── extractColorPalette()       k-means on ALL_ELEMENTS colors
+        ├── extractSemanticTheme()      nav/header/footer/button styles
+        ├── extractVisualHierarchy()    size × position × font scoring
+        ├── extractBrandColors()        logo parent background
+        ├── detectCSSFramework()        class fingerprinting
+        ├── extractTypographyScale()    modular ratio detection
+        ├── extractAccessibleTheme()    WCAG contrast pairs
+        └── extractLayoutPatterns()     grid + flex properties
+              │
+              ▼
+        return { style, content }
+              │
+              ▼
+        res.json() → React UI renders 6 panels
+```
+
+---
+
+## Getting Started
 
 ### Prerequisites
 
-- Node.js v18 or higher
+- Node.js v20 or higher
 - npm
 
-### 1. Install dependencies
+### 1. Clone
+
+```bash
+git clone https://github.com/Gurkunwar-Singh/WebPatternAnalyzer
+cd WebPatternAnalyzer/SourceCode
+```
+
+### 2. Install dependencies
 
 ```bash
 npm install
-```
-
-### 2. Install Puppeteer's Chrome
-
-```bash
-npx puppeteer browsers install chrome
+# postinstall automatically runs: npx puppeteer browsers install chrome
 ```
 
 ### 3. Configure environment
 
-Create a `.env` file in the project root:
+Create a `.env` file in `SourceCode/`:
 
 ```env
 PORT=3000
-BROWSER_INSTANCES=2
-BROWSER_INSTANCE_DEBUG_PORT=9222
+BROWSER_INSTANCES=1
 ENVIRONMENT=development
 ```
 
 | Variable | Default | Description |
 |---|---|---|
 | `PORT` | `3000` | HTTP server port |
-| `BROWSER_INSTANCES` | `2` | Number of browser instances in the pool |
-| `BROWSER_INSTANCE_DEBUG_PORT` | `9222` | Starting port for Chrome DevTools (dev only) |
-| `ENVIRONMENT` | `production` | Set to `development` to expose debug ports in responses |
+| `BROWSER_INSTANCES` | `1` | Chrome instances in pool (use 1 on low-memory hosts) |
+| `ENVIRONMENT` | `production` | Set `development` to expose debug ports |
 
 ### 4. Run
 
 ```bash
-# Development (auto-reload on save)
+# Development (auto-reload)
 npm run dev
 
-# Production build
-npm run build
-npm start
+# Production
+npm run build && npm start
 ```
 
 You should see:
-
 ```
+info: Browser pool initialized successfully
 info: Theme Extraction API Server listening on port 3000
+```
+
+### 5. Run the frontend
+
+```bash
+cd ../ui
+npm install
+npm run dev
 ```
 
 ---
 
-## API reference
+## API Reference
 
 ### `GET /health`
-
-Returns server status.
-
-**Response**
 
 ```json
 {
   "status": "healthy",
-  "timestamp": "2026-04-29T09:00:00.000Z",
-  "uptime": 42.3
+  "timestamp": "2026-04-30T10:00:00.000Z",
+  "uptime": 120.4
 }
 ```
-
----
 
 ### `POST /extract-theme`
 
-Extracts UX design patterns from a live URL.
-
 **Request**
-
 ```json
-{
-  "url": "https://example.com"
-}
+{ "url": "https://example.com" }
 ```
 
 **Response**
-
 ```json
 {
   "style": {
-    "colorPalette": ["rgb(255, 255, 255)", "rgb(0, 0, 0)", "..."],
+    "colorPalette": ["rgb(255,255,255)", "rgb(26,26,26)"],
     "semanticTheme": {
-      "navigation": { "background-color": "...", "color": "...", "font-family": "..." },
-      "headings": { "color": "...", "font-size": "30px", "font-weight": "700" }
+      "navigation": { "background-color": "rgb(255,255,255)", "color": "rgb(26,26,26)" },
+      "headings":   { "font-size": "30px", "font-weight": "700" }
     },
     "visualHierarchy": [
-      { "selector": "div.bg-white", "weight": 0.994, "styles": { ... } }
+      { "selector": "div.hero", "weight": 0.99, "styles": { "fontSize": "48px" } }
     ],
-    "cssFramework": { "framework": "tailwind" },
-    "typography": {
-      "scale": 1.125,
-      "baseFontSize": 16,
-      "fontSizes": [16, 18, 20, 30, 48],
-      "primaryFontFamily": "ui-sans-serif, system-ui, sans-serif",
-      "primaryFontWeight": "400"
-    },
-    "accessibility": {
-      "accessibleColorPairs": [ { "background": "...", "foreground": "...", "contrast": 21 } ],
-      "averageContrast": 21
-    },
-    "layoutPatterns": {
-      "grid": { "grid-template-columns": "234px 234px 234px", "gap": "24px" },
-      "flexbox": { "flex-direction": "row", "justify-content": "center" }
-    },
-    "metadata": {
-      "title": "Page Title",
-      "url": "https://example.com",
-      "extractedAt": "2026-04-29T09:30:00.000Z"
-    }
+    "cssFramework":   { "framework": "tailwind" },
+    "typography":     { "scale": 1.25, "baseFontSize": 16, "fontSizes": [16,20,30,48] },
+    "accessibility":  { "accessibleColorPairs": [...], "averageContrast": 12.4 },
+    "layoutPatterns": { "grid": { "gap": "24px" }, "flexbox": { "flex-direction": "row" } },
+    "metadata":       { "title": "Example", "url": "https://example.com", "extractedAt": "..." }
   },
-  "content": "# Page Title\n\nExtracted markdown content..."
+  "content": "# Example\n\nPage text content in markdown..."
 }
 ```
 
@@ -183,41 +291,43 @@ Extracts UX design patterns from a live URL.
 | Status | Reason |
 |---|---|
 | `400` | Missing or invalid URL |
-| `408` | Page load or browser acquisition timed out |
-| `500` | Extraction failed (see `message` field) |
+| `408` | Timeout (page load or browser acquisition) |
+| `500` | Extraction failed — see `message` field |
 
 ---
 
-## Testing
+## Testing the API
 
-### PowerShell (Windows)
+```bash
+# curl
+curl -X POST https://webstyle-analyzer.onrender.com/extract-theme \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://example.com"}'
 
-```powershell
-Invoke-WebRequest -Uri "http://localhost:3000/extract-theme" `
-  -Method POST `
-  -ContentType "application/json" `
+# PowerShell
+Invoke-WebRequest -Uri "https://webstyle-analyzer.onrender.com/extract-theme" `
+  -Method POST -ContentType "application/json" `
   -Body '{"url": "https://example.com"}'
 ```
 
-### curl (Linux / macOS / WSL)
+---
 
-```bash
-curl -X POST http://localhost:3000/extract-theme \
-  -H "Content-Type: application/json" \
-  -d '{"url": "https://example.com"}'
-```
+## Deployment Notes (Render Free Tier)
 
-### curl (Windows CMD)
+The backend is constrained to **512MB RAM**. These optimizations keep it within limits:
 
-```cmd
-curl -X POST http://localhost:3000/extract-theme -H "Content-Type: application/json" -d "{\"url\": \"https://example.com\"}"
-```
+- `--single-process` Chrome flag (biggest memory saving)
+- Resource interception — images, fonts, stylesheets, and media are blocked before load
+- `waitUntil: 'domcontentloaded'` instead of `networkidle2`
+- `ALL_ELEMENTS` capped at 400 elements, shared across all 8 algorithms
+- `BROWSER_INSTANCES=1` — single Chrome instance
+- Chrome installed inside project directory via `.puppeteerrc.cjs` so it persists through Render's build → deploy pipeline
 
 ---
 
-## Running on WSL (Windows Subsystem for Linux)
+## Running on WSL
 
-Puppeteer requires several system libraries on Linux. Install them with:
+Install required system libraries:
 
 ```bash
 sudo apt-get update && sudo apt-get install -y \
@@ -228,80 +338,40 @@ sudo apt-get update && sudo apt-get install -y \
   fonts-liberation xdg-utils
 ```
 
-Also ensure `BrowserPool.ts` uses `headless: true` and `--no-sandbox`:
+---
 
-```typescript
-const browser = await puppeteer.launch({
-  headless: true,
-  args: ['--no-sandbox', '--disable-setuid-sandbox', ...launchArgs],
-});
+## Docker
+
+```bash
+docker build -t web-pattern-analyzer .
+docker run -p 3000:3000 -e BROWSER_INSTANCES=1 web-pattern-analyzer
 ```
 
 ---
 
-## How the color extraction works
+## How K-Means Color Extraction Works
 
-Colors are extracted as RGB vectors from every DOM element's computed `backgroundColor`, `color`, and `borderColor`. K-means clustering then groups similar values:
-
-1. **Initialize** — select K random centroids (K = 5–8, based on sample count)
-2. **Assign** — each color sample maps to the nearest centroid (Euclidean RGB distance)
-3. **Update** — recalculate each centroid as the mean of its cluster
-4. **Repeat** — until centroid shift < 5 units
-
-The resulting centroids are the dominant color palette.
-
----
-
-## Architecture
-
-```
-Client
-  │
-  ▼
-Express server (stateless REST)
-  │
-  ├── /health ──────────────────────── instant response
-  │
-  └── /extract-theme
-        │
-        ├── validate URL
-        ├── acquire browser from pool (round-robin)
-        ├── open new page
-        ├── goto URL (30s timeout)
-        ├── autoScroll (trigger lazy content)
-        ├── page.evaluate() ──────────── runs in browser context
-        │     ├── extractColorPalette()
-        │     ├── extractSemanticTheme()
-        │     ├── extractVisualHierarchy()
-        │     ├── extractBrandColors()
-        │     ├── detectCSSFramework()
-        │     ├── extractTypographyScale()
-        │     ├── extractAccessibleTheme()
-        │     └── extractLayoutPatterns()
-        ├── close page (browser stays in pool)
-        └── return JSON response
-```
+1. Collect `backgroundColor`, `color`, `borderColor` from ALL_ELEMENTS (max 400)
+2. Convert each to an RGB vector `[r, g, b]`
+3. Initialize K random centroids (K = 3–6 based on sample count)
+4. Assign each color to the nearest centroid (Euclidean distance)
+5. Recalculate each centroid as the mean of its cluster
+6. Repeat until centroid shift < 5 RGB units or 10 iterations
+7. Return centroids as the dominant palette
 
 ---
 
-## Future scope
+## Future Scope
 
-- Large-scale batch analysis across thousands of URLs
 - Dark mode and adaptive theme detection
-- ML-based design quality scoring
-- Longitudinal trend tracking over time
-- Docker container for one-command deployment
+- Batch analysis across thousands of URLs
+- ML-based design quality scoring (trained on design system patterns)
+- Longitudinal trend tracking — re-analyze URLs over time
+- Export results as Figma tokens or CSS custom properties
+- Docker Compose for one-command local deployment
 
 ---
 
-## Team
+## License
 
-Built as a CO-OP Industry Project (Module 2) at Chitkara University.
-
-| Name | Roll No. |
-|---|---|
-| Gurkunwar Singh | 2210991595 |
-| Anshik Singh | 2210991302 |
-| Piyush | 2210992038 |
-
-Supervised by **Dr. Lalit Sharma**, Department of CSE, Chitkara University, Punjab.
+MIT © 2026 Gurkunwar Singh, Anshik Singh, Piyush
