@@ -1,5 +1,5 @@
 import express, { Request, Response } from 'express';
-import { autoScroll, validateUrl, withTimeout } from '../utils/helpers';
+import { validateUrl, withTimeout } from '../utils/helpers';
 import { browserPool } from '../puppeteer/BrowserPool';
 import { BrowserPoolItem } from '../type';
 import dotenv from 'dotenv';
@@ -20,19 +20,13 @@ router.post('/extract-theme', async (req: Request, res: Response) => {
   res.setTimeout(120000);
   const { url } = req.body;
 
-  if (!url) {
-    return res.status(400).json({ error: 'Missing required parameters' });
-  }
-
-  if (!validateUrl(url)) {
-    return res.status(400).json({ error: 'Invalid URL provided' });
-  }
+  if (!url) return res.status(400).json({ error: 'Missing required parameters' });
+  if (!validateUrl(url)) return res.status(400).json({ error: 'Invalid URL provided' });
 
   let browserPoolItem: BrowserPoolItem;
-  let page;
+  let page: any;
 
   try {
-    // Get browser from pool with timeout
     browserPoolItem = await withTimeout(
       browserPool.getBrowser(),
       30000,
@@ -40,751 +34,365 @@ router.post('/extract-theme', async (req: Request, res: Response) => {
     );
 
     page = await browserPoolItem.browser.newPage();
-
-    // Set page timeout
     page.setDefaultTimeout(60000);
 
-    // Navigate with timeout
-await withTimeout(
-  page.goto(url, { waitUntil: 'networkidle2' }),
-  60000,
-  'Page navigation timed out'
-);
-await new Promise(resolve => setTimeout(resolve, 3000));
-
-    await autoScroll(page);
-
-    // Extract content and theme data
-    const { content, theme } = await page.evaluate(() => {
-      function htmlToMarkdown(node: Node): string {
-        if (node.nodeType === Node.TEXT_NODE) {
-          return (node.textContent || '').replace(/\s+/g, ' ');
-        }
-
-        if (node.nodeType !== Node.ELEMENT_NODE) {
-          return '';
-        }
-
-        const el = node as HTMLElement;
-        const tag = el.tagName.toLowerCase();
-        let md = '';
-
-        switch (tag) {
-          case 'h1':
-            md += `# ${Array.from(el.childNodes).map(htmlToMarkdown).join('')}\n\n`;
-            break;
-          case 'h2':
-            md += `## ${Array.from(el.childNodes).map(htmlToMarkdown).join('')}\n\n`;
-            break;
-          case 'h3':
-            md += `### ${Array.from(el.childNodes).map(htmlToMarkdown).join('')}\n\n`;
-            break;
-          case 'p':
-            md += `${Array.from(el.childNodes).map(htmlToMarkdown).join('')}\n\n`;
-            break;
-          case 'br':
-            md += '  \n';
-            break;
-          case 'strong':
-          case 'b':
-            md += `**${Array.from(el.childNodes).map(htmlToMarkdown).join('')}**`;
-            break;
-          case 'em':
-          case 'i':
-            md += `*${Array.from(el.childNodes).map(htmlToMarkdown).join('')}*`;
-            break;
-          case 'a': {
-            const href = el.getAttribute('href') || '';
-            md += `[${Array.from(el.childNodes).map(htmlToMarkdown).join('')}](${href})`;
-            break;
-          }
-          case 'img': {
-            const src = el.getAttribute('src') || '';
-            const alt = el.getAttribute('alt') || '';
-            md += `![${alt}](${src})`;
-            break;
-          }
-
-          case 'ul':
-            md += `\n${Array.from(el.childNodes).map(htmlToMarkdown).join('')}\n`;
-            break;
-          case 'ol':
-            md += `\n${Array.from(el.childNodes).map(htmlToMarkdown).join('')}\n`;
-            break;
-          case 'li':
-            md += `- ${Array.from(el.childNodes).map(htmlToMarkdown).join('')}\n`;
-            break;
-          case 'blockquote':
-            md += `> ${Array.from(el.childNodes).map(htmlToMarkdown).join('')}\n\n`;
-            break;
-          case 'pre':
-            md += `\`\`\`\n${el.innerText}\n\`\`\`\n`;
-            break;
-          case 'code':
-            md += `\`${el.innerText}\``;
-            break;
-          default:
-            md += Array.from(el.childNodes).map(htmlToMarkdown).join('');
-        }
-
-        return md;
+    // Block heavy resources to save memory
+    await page.setRequestInterception(true);
+    page.on('request', (req: any) => {
+      const type = req.resourceType();
+      if (['image', 'media', 'font', 'stylesheet'].includes(type)) {
+        req.abort();
+      } else {
+        req.continue();
       }
+    });
 
-      // Clean document (remove scripts/styles)
-      document.querySelectorAll('script, style, noscript').forEach(el => el.remove());
+    // domcontentloaded is much lighter than networkidle2
+    await withTimeout(
+      page.goto(url, { waitUntil: 'domcontentloaded' }),
+      60000,
+      'Page navigation timed out'
+    );
 
-      const bodyMarkdown = htmlToMarkdown(document.body);
+    const { content, theme } = await page.evaluate(() => {
+      // ── Single shared element cap — used by ALL functions ──
+      const ALL_ELEMENTS = Array.from(document.querySelectorAll('*')).slice(0, 400);
+
+      // ── Markdown: only extract visible text, skip full recursion ──
+      function extractTextContent(): string {
+        const blocks: string[] = [];
+        const tags = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'li', 'blockquote'];
+        tags.forEach(tag => {
+          document.querySelectorAll(tag).forEach((el: Element) => {
+            const text = (el as HTMLElement).innerText?.trim();
+            if (text && text.length > 0 && text.length < 500) {
+              const prefix = tag.startsWith('h') ? '#'.repeat(parseInt(tag[1])) + ' ' : '';
+              blocks.push(prefix + text);
+            }
+          });
+        });
+        return blocks.slice(0, 200).join('\n\n');
+      }
 
       function isMeaningfulValue(property: string, value: string): boolean {
         if (!value || value.trim() === '') return false;
-
-        const normalizedValue = value.trim().toLowerCase();
-
-        switch (property) {
-          case 'background':
-          case 'background-color':
-            return (
-              normalizedValue !== 'rgba(0, 0, 0, 0)' &&
-              normalizedValue !== 'transparent' &&
-              normalizedValue !== 'initial' &&
-              normalizedValue !== 'inherit'
-            );
-
-          case 'border':
-          case 'border-color':
-            return (
-              !normalizedValue.includes('0px') &&
-              normalizedValue !== 'none' &&
-              normalizedValue !== 'initial' &&
-              normalizedValue !== 'inherit'
-            );
-
-          case 'outline':
-          case 'outline-color':
-            return (
-              !normalizedValue.includes('0px') &&
-              normalizedValue !== 'none' &&
-              normalizedValue !== 'initial' &&
-              normalizedValue !== 'inherit'
-            );
-
-          default:
-            return (
-              normalizedValue !== 'initial' &&
-              normalizedValue !== 'inherit' &&
-              normalizedValue !== 'unset'
-            );
+        const v = value.trim().toLowerCase();
+        if (['initial', 'inherit', 'unset'].includes(v)) return false;
+        if (['background', 'background-color'].includes(property)) {
+          return v !== 'rgba(0, 0, 0, 0)' && v !== 'transparent';
         }
+        if (['border', 'border-color', 'outline', 'outline-color'].includes(property)) {
+          return !v.includes('0px') && v !== 'none';
+        }
+        return true;
       }
 
       function extractColorPalette() {
         const colors: string[] = [];
-        const elements = document.querySelectorAll('*');
-        elements.forEach(el => {
+        ALL_ELEMENTS.forEach((el: Element) => {
           const styles = window.getComputedStyle(el);
-          const bgColor = styles.backgroundColor;
-          const textColor = styles.color;
-          const borderColor = styles.borderColor;
-          [bgColor, textColor, borderColor].forEach(color => {
-            if (color && color !== 'rgba(0, 0, 0, 0)' && color !== 'transparent') {
-              colors.push(color);
-            }
+          [styles.backgroundColor, styles.color, styles.borderColor].forEach(c => {
+            if (c && c !== 'rgba(0, 0, 0, 0)' && c !== 'transparent') colors.push(c);
           });
         });
-        function rgbToArray(rgbString: string) {
-          const match = rgbString.match(/rgba?\(([^)]+)\)/);
-          if (!match) return null;
-          return match[1].split(',').map(n => parseInt(n.trim()));
+
+        function rgbToArray(s: string) {
+          const m = s.match(/rgba?\(([^)]+)\)/);
+          return m ? m[1].split(',').map(n => parseInt(n.trim())) : null;
         }
-        function colorDistance(color1: number[], color2: number[]) {
-          const [r1, g1, b1] = color1;
-          const [r2, g2, b2] = color2;
-          return Math.sqrt((r1 - r2) ** 2 + (g1 - g2) ** 2 + (b1 - b2) ** 2);
+        function dist(a: number[], b: number[]) {
+          return Math.sqrt((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2);
         }
 
-        const colorArrays = colors.map(rgbToArray).filter(Boolean) as number[][];
+        const arrays = colors.map(rgbToArray).filter(Boolean) as number[][];
+        if (arrays.length === 0) return [];
 
-        const k = Math.min(8, Math.max(5, Math.floor(colorArrays.length / 20)));
-        let centroids: number[][] = [];
-
-        for (let i = 0; i < k; i++) {
-          centroids.push(colorArrays[Math.floor(Math.random() * colorArrays.length)]);
-        }
-
-        let clusters: number[][][] = [];
+        const k = Math.min(6, Math.max(3, Math.floor(arrays.length / 20)));
+        let centroids = arrays.slice(0, k);
         let changed = true;
 
-        while (changed) {
-          clusters = Array(k)
-            .fill(null)
-            .map(() => []);
-          changed = false;
-
-          colorArrays.forEach(color => {
-            let minDist = Infinity;
-            let clusterIndex = 0;
-
-            centroids.forEach((centroid, i) => {
-              const dist = colorDistance(color, centroid);
-              if (dist < minDist) {
-                minDist = dist;
-                clusterIndex = i;
-              }
-            });
-
-            clusters[clusterIndex].push(color);
+        for (let iter = 0; iter < 10 && changed; iter++) {
+          const clusters: number[][][] = Array(k).fill(null).map(() => []);
+          arrays.forEach(c => {
+            let min = Infinity, idx = 0;
+            centroids.forEach((cen, i) => { const d = dist(c, cen); if (d < min) { min = d; idx = i; } });
+            clusters[idx].push(c);
           });
-
-          const newCentroids = clusters.map(cluster => {
-            if (cluster.length === 0) return centroids[clusters.indexOf(cluster)];
-
-            const sum = cluster.reduce(
-              (acc, color) => {
-                return [acc[0] + color[0], acc[1] + color[1], acc[2] + color[2]];
-              },
-              [0, 0, 0]
-            );
-
-            return [
-              Math.round(sum[0] / cluster.length),
-              Math.round(sum[1] / cluster.length),
-              Math.round(sum[2] / cluster.length),
-            ];
+          const next = clusters.map((cl, i) => {
+            if (!cl.length) return centroids[i];
+            const sum = cl.reduce((a, c) => [a[0] + c[0], a[1] + c[1], a[2] + c[2]], [0, 0, 0]);
+            return sum.map(v => Math.round(v / cl.length));
           });
-
-          changed = centroids.some((centroid, i) => {
-            return colorDistance(centroid, newCentroids[i]) > 5;
-          });
-
-          centroids = newCentroids;
+          changed = centroids.some((c, i) => dist(c, next[i]) > 5);
+          centroids = next;
         }
-
-        return centroids.map(centroid => {
-          return `rgb(${centroid[0]}, ${centroid[1]}, ${centroid[2]})`;
-        });
+        return centroids.map(c => `rgb(${c[0]}, ${c[1]}, ${c[2]})`);
       }
 
       function extractSemanticTheme() {
         const semanticMap: Record<string, string[]> = {
-          primary: ['body', 'html', '[role="main"]', 'main'],
-          navigation: ['nav', '[role="navigation"]', '.nav', '.navbar', '.menu'],
-          header: ['header', '[role="banner"]', '.header', '.site-header'],
-          footer: ['footer', '[role="contentinfo"]', '.footer', '.site-footer'],
-          content: ['article', '[role="article"]', '.content', '.post', '.entry'],
-          sidebar: ['aside', '[role="complementary"]', '.sidebar', '.widget-area'],
-          buttons: ['button', '[role="button"]', '.btn', '.button', 'input[type="submit"]'],
-          links: ['a', '[role="link"]'],
-          forms: ['form', 'input', 'textarea', 'select'],
-          headings: ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'],
+          primary: ['body', 'main'],
+          navigation: ['nav', 'header'],
+          footer: ['footer'],
+          buttons: ['button', 'input[type="submit"]'],
+          links: ['a'],
+          headings: ['h1', 'h2', 'h3'],
         };
-
+        const props = ['background-color', 'color', 'font-family', 'font-size', 'font-weight'];
         const theme: Record<string, Record<string, string>> = {};
-        const themeProperties = [
-          'background-color',
-          'color',
-          'border-color',
-          'font-family',
-          'font-size',
-          'font-weight',
-        ];
 
-        Object.entries(semanticMap).forEach(([category, selectors]) => {
-          const categoryStyles: Record<string, Record<string, number>> = {};
-
-          selectors.forEach(selector => {
-            const elements = document.querySelectorAll(selector);
-            elements.forEach(el => {
+        Object.entries(semanticMap).forEach(([cat, selectors]) => {
+          const catStyles: Record<string, Record<string, number>> = {};
+          selectors.forEach(sel => {
+            // Cap each selector to 10 elements
+            Array.from(document.querySelectorAll(sel)).slice(0, 10).forEach((el: Element) => {
               const styles = window.getComputedStyle(el);
               const rect = el.getBoundingClientRect();
               const weight = Math.min(rect.width * rect.height, 10000) / 10000;
-
-              themeProperties.forEach(prop => {
-                const value = styles.getPropertyValue(prop);
-                if (isMeaningfulValue(prop, value)) {
-                  if (!categoryStyles[prop]) categoryStyles[prop] = {};
-                  categoryStyles[prop][value] = (categoryStyles[prop][value] || 0) + weight;
+              props.forEach(prop => {
+                const val = styles.getPropertyValue(prop);
+                if (isMeaningfulValue(prop, val)) {
+                  catStyles[prop] = catStyles[prop] || {};
+                  catStyles[prop][val] = (catStyles[prop][val] || 0) + weight;
                 }
               });
             });
           });
-
-          theme[category] = Object.fromEntries(
-            Object.entries(categoryStyles).map(([prop, values]) => [
-              prop,
-              Object.entries(values).sort(([, a], [, b]) => b - a)[0]?.[0] || '',
+          theme[cat] = Object.fromEntries(
+            Object.entries(catStyles).map(([p, vals]) => [
+              p,
+              Object.entries(vals).sort(([, a], [, b]) => b - a)[0]?.[0] || ''
             ])
           );
         });
-
         return theme;
       }
 
       function extractVisualHierarchy() {
-        function calculateVisualWeight(element: Element) {
-          const rect = element.getBoundingClientRect();
-          const styles = window.getComputedStyle(element);
-
-          // Size weight
-          const area = rect.width * rect.height;
-          const sizeWeight = Math.min(area / (window.innerWidth * window.innerHeight), 1);
-
-          // Position weight (elements higher up are more important)
-          const positionWeight = 1 - rect.top / window.innerHeight;
-
-          // Font size weight
-          const fontSize = parseFloat(styles.fontSize) || 16;
-          const fontWeight = Math.min(fontSize / 72, 1); // Normalize to 72px max
-
-          // Contrast weight
-          const bgColor = styles.backgroundColor;
-          const textColor = styles.color;
-          const contrastWeight = calculateContrast(bgColor, textColor);
-
-          return {
-            size: sizeWeight,
-            position: Math.max(0, positionWeight),
-            font: fontWeight,
-            contrast: contrastWeight,
-            total: (sizeWeight + positionWeight + fontWeight + contrastWeight) / 4,
-          };
+        function getLuminance(rgb: number[]) {
+          return rgb.map(c => {
+            c /= 255;
+            return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+          }).reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0);
         }
 
-        function calculateContrast(bg: string, fg: string) {
-          // Simplified contrast calculation
-          if (!bg || !fg) return 0.5;
-
-          // Convert to RGB
-          function parseColor(color: string): number[] {
-            const div = document.createElement('div');
-            div.style.color = color;
-            document.body.appendChild(div);
-            const rgb = window.getComputedStyle(div).color;
-            document.body.removeChild(div);
-
-            const match = rgb.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-            if (match) {
-              return [parseInt(match[1]), parseInt(match[2]), parseInt(match[3])];
-            }
-            return [0, 0, 0];
-          }
-
-          const bgRgb = parseColor(bg);
-          const fgRgb = parseColor(fg);
-
-          // Calculate relative luminance
-          function getLuminance(rgb: number[]) {
-            const [r, g, b] = rgb.map(c => {
-              c /= 255;
-              return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
-            });
-            return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-          }
-
-          const lum1 = getLuminance(bgRgb);
-          const lum2 = getLuminance(fgRgb);
-
-          // Calculate contrast ratio
-          const lighter = Math.max(lum1, lum2);
-          const darker = Math.min(lum1, lum2);
-          const contrast = (lighter + 0.05) / (darker + 0.05);
-
-          // Normalize to 0-1 scale
-          return Math.min(contrast / 21, 1); // Max contrast is 21:1
-        }
-
-        const elements = document.querySelectorAll('*');
-        const weightedElements = Array.from(elements)
-          .map(el => ({ element: el, weight: calculateVisualWeight(el) }))
-          .sort((a, b) => b.weight.total - a.weight.total)
-          .slice(0, 20); // Top 20 most important elements
-
-        // Extract themes from these important elements
-      
-return weightedElements.map(({ element, weight }) => ({
-  styles: {
-    backgroundColor: window.getComputedStyle(element).backgroundColor,
-    color: window.getComputedStyle(element).color,
-    fontFamily: window.getComputedStyle(element).fontFamily,
-    fontSize: window.getComputedStyle(element).fontSize,
-  },
-  weight: weight.total,
-  selector:
-    element.tagName.toLowerCase() +
-    (typeof element.className === 'string' && element.className.trim()
-      ? '.' + element.className.trim().split(/\s+/)[0]
-      : ''),
-}));
+        return ALL_ELEMENTS
+          .map((el: Element) => {
+            const rect = el.getBoundingClientRect();
+            const styles = window.getComputedStyle(el);
+            const area = rect.width * rect.height;
+            const sizeW = Math.min(area / (window.innerWidth * window.innerHeight), 1);
+            const posW = Math.max(0, 1 - rect.top / window.innerHeight);
+            const fontSize = parseFloat(styles.fontSize) || 16;
+            const fontW = Math.min(fontSize / 72, 1);
+            const total = (sizeW + posW + fontW) / 3;
+            return {
+              styles: {
+                backgroundColor: styles.backgroundColor,
+                color: styles.color,
+                fontFamily: styles.fontFamily,
+                fontSize: styles.fontSize,
+              },
+              weight: total,
+              selector: el.tagName.toLowerCase() +
+                (typeof (el as HTMLElement).className === 'string' && (el as HTMLElement).className.trim()
+                  ? '.' + (el as HTMLElement).className.trim().split(/\s+/)[0] : ''),
+            };
+          })
+          .sort((a, b) => b.weight - a.weight)
+          .slice(0, 20);
       }
 
-      // 4. Brand Color Detection Algorithm
       function extractBrandColors() {
-        const images = document.querySelectorAll('img, svg, [style*="background-image"]');
         const brandColors: any[] = [];
-
-        images.forEach(img => {
-          if (img.tagName === 'IMG') {
-            // For logos/brand images (usually smaller, in header/nav)
-            const rect = img.getBoundingClientRect();
-            const isLikelyLogo = rect.height < 100 && rect.width < 300;
-
-            if (isLikelyLogo) {
-              // Get the parent element's background color as potential brand color
-              const parentBg = window.getComputedStyle(
-                img.parentElement || document.body
-              ).backgroundColor;
-              if (parentBg && parentBg !== 'rgba(0, 0, 0, 0)' && parentBg !== 'transparent') {
-                brandColors.push({
-                  source: 'logo-background',
-                  color: parentBg,
-                  importance: 'high',
-                });
-              }
+        Array.from(document.querySelectorAll('img')).slice(0, 20).forEach((img: Element) => {
+          const rect = img.getBoundingClientRect();
+          if (rect.height < 100 && rect.width < 300) {
+            const parentBg = window.getComputedStyle(
+              (img as HTMLElement).parentElement || document.body
+            ).backgroundColor;
+            if (parentBg && parentBg !== 'rgba(0, 0, 0, 0)' && parentBg !== 'transparent') {
+              brandColors.push({ source: 'logo-background', color: parentBg, importance: 'high' });
             }
           }
         });
-
         return brandColors;
       }
 
-      // 5. CSS Framework Detection
       function detectCSSFramework() {
-        const frameworks = {
-          bootstrap: {
-            selectors: ['.container', '.row', '.col', '.btn-primary'],
-            variables: ['--bs-primary', '--bs-secondary', '--bs-success'],
-          },
-          tailwind: {
-            selectors: ['.bg-blue-500', '.text-gray-900', '.p-4'],
-            variables: [], // Tailwind uses utility classes
-          },
-          bulma: {
-            selectors: ['.hero', '.navbar', '.button.is-primary'],
-            variables: [],
-          },
-          foundation: {
-            selectors: ['.grid-x', '.cell', '.button.primary'],
-            variables: [],
-          },
+        const frameworks: Record<string, { selectors: string[]; variables: string[] }> = {
+          bootstrap: { selectors: ['.container', '.row', '.btn-primary'], variables: ['--bs-primary'] },
+          tailwind: { selectors: ['.bg-blue-500', '.text-gray-900'], variables: [] },
+          bulma: { selectors: ['.hero', '.button.is-primary'], variables: [] },
         };
-
-        let detectedFramework = null;
-        let maxMatches = 0;
-
-        Object.entries(frameworks).forEach(([name, config]) => {
-          const matches = config.selectors.reduce((count, selector) => {
-            return count + document.querySelectorAll(selector).length;
-          }, 0);
-
-          if (matches > maxMatches) {
-            maxMatches = matches;
-            detectedFramework = name;
-          }
+        let best: string | null = null, max = 0;
+        Object.entries(frameworks).forEach(([name, cfg]) => {
+          const count = cfg.selectors.reduce((n, sel) => n + document.querySelectorAll(sel).length, 0);
+          if (count > max) { max = count; best = name; }
         });
-
-        if (detectedFramework) {
-          // Extract framework-specific theme variables
-          const framework = (frameworks as any)[detectedFramework];
-          const theme: Record<string, string> = {
-            framework: detectedFramework,
-          };
-
-          framework.variables.forEach((varName: string) => {
-            const value = getComputedStyle(document.documentElement).getPropertyValue(varName);
-            if (value) theme[varName] = value.trim();
-          });
-
-          return theme;
-        }
-
-        return null;
+        if (!best) return null;
+        const theme: Record<string, string> = { framework: best };
+        frameworks[best].variables.forEach(v => {
+          const val = getComputedStyle(document.documentElement).getPropertyValue(v);
+          if (val) theme[v] = val.trim();
+        });
+        return theme;
       }
 
-      // 6. Typography Scale Analysis
       function extractTypographyScale() {
-        const textElements = document.querySelectorAll(
-          'h1, h2, h3, h4, h5, h6, p, span, div, a, button'
-        );
+        // Only heading + p tags — not div/span
+        const els = Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6,p')).slice(0, 100);
         const fontSizes: number[] = [];
         const fontFamilies: Record<string, number> = {};
         const fontWeights: Record<string, number> = {};
 
-        textElements.forEach(el => {
-          const styles = window.getComputedStyle(el);
-          const fontSize = parseFloat(styles.fontSize);
-          const fontFamily = styles.fontFamily;
-          const fontWeight = styles.fontWeight;
-
-          if (fontSize && fontSize > 0) {
-            fontSizes.push(fontSize);
-          }
-
-          if (fontFamily) {
-            fontFamilies[fontFamily] = (fontFamilies[fontFamily] || 0) + 1;
-          }
-
-          if (fontWeight) {
-            fontWeights[fontWeight] = (fontWeights[fontWeight] || 0) + 1;
-          }
+        els.forEach((el: Element) => {
+          const s = window.getComputedStyle(el);
+          const fs = parseFloat(s.fontSize);
+          if (fs > 0) fontSizes.push(fs);
+          if (s.fontFamily) fontFamilies[s.fontFamily] = (fontFamilies[s.fontFamily] || 0) + 1;
+          if (s.fontWeight) fontWeights[s.fontWeight] = (fontWeights[s.fontWeight] || 0) + 1;
         });
 
-        // Detect typography scale (1.125, 1.2, 1.25, 1.333, 1.414, 1.5, 1.618)
-        const uniqueSizes = [...new Set(fontSizes)].sort((a, b) => a - b);
+        const unique = [...new Set(fontSizes)].sort((a, b) => a - b);
         const scales = [1.125, 1.2, 1.25, 1.333, 1.414, 1.5, 1.618];
-
-        let bestScale = null;
-        let bestMatch = 0;
+        let bestScale = null, bestMatch = 0;
+        const base = Math.min(...unique);
 
         scales.forEach(scale => {
           let matches = 0;
-          const baseSize = Math.min(...uniqueSizes);
-
-          uniqueSizes.forEach(size => {
-            const expectedSize =
-              baseSize * Math.pow(scale, Math.round(Math.log(size / baseSize) / Math.log(scale)));
-            if (Math.abs(size - expectedSize) < 2) matches++;
+          unique.forEach(size => {
+            const exp = base * Math.pow(scale, Math.round(Math.log(size / base) / Math.log(scale)));
+            if (Math.abs(size - exp) < 2) matches++;
           });
-
-          if (matches > bestMatch) {
-            bestMatch = matches;
-            bestScale = scale;
-          }
+          if (matches > bestMatch) { bestMatch = matches; bestScale = scale; }
         });
 
         return {
           scale: bestScale,
-          baseFontSize: Math.min(...uniqueSizes),
-          fontSizes: uniqueSizes,
+          baseFontSize: base,
+          fontSizes: unique.slice(0, 20),
           primaryFontFamily: Object.entries(fontFamilies).sort(([, a], [, b]) => b - a)[0]?.[0],
           primaryFontWeight: Object.entries(fontWeights).sort(([, a], [, b]) => b - a)[0]?.[0],
         };
       }
 
-      // 7. Accessibility-Aware Theme Extraction
       function extractAccessibleTheme() {
-        function getContrastRatio(color1: string, color2: string) {
-          // Convert to RGB and calculate WCAG contrast ratio
-          function parseColor(color: string): number[] {
-            const div = document.createElement('div');
-            div.style.color = color;
-            document.body.appendChild(div);
-            const rgb = window.getComputedStyle(div).color;
-            document.body.removeChild(div);
-
-            const match = rgb.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-            if (match) {
-              return [parseInt(match[1]), parseInt(match[2]), parseInt(match[3])];
-            }
-            return [0, 0, 0];
-          }
-
-          function getLuminance(rgb: number[]) {
-            const [r, g, b] = rgb.map(c => {
-              c /= 255;
-              return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
-            });
-            return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-          }
-
-          const rgb1 = parseColor(color1);
-          const rgb2 = parseColor(color2);
-
-          const lum1 = getLuminance(rgb1);
-          const lum2 = getLuminance(rgb2);
-
-          const lighter = Math.max(lum1, lum2);
-          const darker = Math.min(lum1, lum2);
-          return (lighter + 0.05) / (darker + 0.05);
+        function parseRgb(color: string): number[] {
+          const m = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+          return m ? [+m[1], +m[2], +m[3]] : [0, 0, 0];
+        }
+        function getLum(rgb: number[]) {
+          return rgb.map(c => { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); })
+            .reduce((s, v, i) => s + v * [0.2126, 0.7152, 0.0722][i], 0);
         }
 
-        const accessiblePairs: any[] = [];
-        const elements = document.querySelectorAll('*');
-
-        elements.forEach(el => {
-          const styles = window.getComputedStyle(el);
-          const bgColor = styles.backgroundColor;
-          const textColor = styles.color;
-
-          if (bgColor && textColor && bgColor !== 'rgba(0, 0, 0, 0)') {
-            const contrast = getContrastRatio(bgColor, textColor);
-
-            if (contrast >= 4.5) {
-              // WCAG AA standard
-              accessiblePairs.push({
-                background: bgColor,
-                foreground: textColor,
-                contrast: contrast,
-                element: el.tagName.toLowerCase(),
-              });
-            }
-          }
+        const pairs: any[] = [];
+        ALL_ELEMENTS.forEach((el: Element) => {
+          const s = window.getComputedStyle(el);
+          const bg = s.backgroundColor, fg = s.color;
+          if (!bg || bg === 'rgba(0, 0, 0, 0)') return;
+          const l1 = getLum(parseRgb(bg)), l2 = getLum(parseRgb(fg));
+          const contrast = (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+          if (contrast >= 4.5) pairs.push({ background: bg, foreground: fg, contrast, element: el.tagName.toLowerCase() });
         });
 
         return {
-          accessibleColorPairs: accessiblePairs.slice(0, 10),
-          averageContrast:
-            accessiblePairs.reduce((sum, pair) => sum + pair.contrast, 0) /
-              accessiblePairs.length || 0,
+          accessibleColorPairs: pairs.slice(0, 10),
+          averageContrast: pairs.length ? pairs.reduce((s, p) => s + p.contrast, 0) / pairs.length : 0,
         };
       }
 
-      // 8. Layout Pattern Recognition
       function extractLayoutPatterns() {
-        const patterns = {
-          grid: {
-            selectors: ['.grid', '.grid-container', '[style*="grid"]', '[class*="grid"]'],
-            properties: ['grid-template-columns', 'grid-gap', 'gap'],
-          },
-          flexbox: {
-            selectors: ['[style*="flex"]', '[class*="flex"]', '.d-flex'],
-            properties: ['flex-direction', 'justify-content', 'align-items', 'gap'],
-          },
-          spacing: {
-            selectors: ['*'],
-            properties: [
-              'margin',
-              'padding',
-              'margin-top',
-              'margin-bottom',
-              'padding-left',
-              'padding-right',
-            ],
-          },
-        };
+        const layout: Record<string, Record<string, string>> = {};
 
-        const layoutTheme: Record<string, Record<string, string>> = {};
-
-        Object.entries(patterns).forEach(([patternName, config]) => {
-          const values: Record<string, Record<string, number>> = {};
-
-          config.selectors.forEach(selector => {
-            document.querySelectorAll(selector).forEach(el => {
-              const styles = window.getComputedStyle(el);
-
-              config.properties.forEach(prop => {
-                const value = styles.getPropertyValue(prop);
-                if (value && value !== 'initial' && value !== 'normal') {
-                  values[prop] = values[prop] || {};
-                  values[prop][value] = (values[prop][value] || 0) + 1;
-                }
-              });
-            });
+        // Grid — capped
+        const gridEls = Array.from(document.querySelectorAll('.grid, [class*="grid"]')).slice(0, 50);
+        const gridVals: Record<string, Record<string, number>> = {};
+        gridEls.forEach((el: Element) => {
+          const s = window.getComputedStyle(el);
+          ['grid-template-columns', 'gap'].forEach(p => {
+            const v = s.getPropertyValue(p);
+            if (v && v !== 'none' && v !== 'normal') {
+              gridVals[p] = gridVals[p] || {};
+              gridVals[p][v] = (gridVals[p][v] || 0) + 1;
+            }
           });
-
-          // Get most common values for each property
-          layoutTheme[patternName] = Object.fromEntries(
-            Object.entries(values).map(([prop, freqs]) => [
-              prop,
-              Object.entries(freqs).sort(([, a], [, b]) => b - a)[0]?.[0] || '',
-            ])
-          );
         });
+        layout.grid = Object.fromEntries(Object.entries(gridVals).map(([p, f]) =>
+          [p, Object.entries(f).sort(([, a], [, b]) => b - a)[0]?.[0] || '']
+        ));
 
-        return layoutTheme;
+        // Flex — capped
+        const flexEls = Array.from(document.querySelectorAll('[class*="flex"], .d-flex')).slice(0, 50);
+        const flexVals: Record<string, Record<string, number>> = {};
+        flexEls.forEach((el: Element) => {
+          const s = window.getComputedStyle(el);
+          ['flex-direction', 'justify-content', 'align-items'].forEach(p => {
+            const v = s.getPropertyValue(p);
+            if (v && v !== 'normal') {
+              flexVals[p] = flexVals[p] || {};
+              flexVals[p][v] = (flexVals[p][v] || 0) + 1;
+            }
+          });
+        });
+        layout.flexbox = Object.fromEntries(Object.entries(flexVals).map(([p, f]) =>
+          [p, Object.entries(f).sort(([, a], [, b]) => b - a)[0]?.[0] || '']
+        ));
+
+        return layout;
       }
 
-      // Extract both content and theme
-      const content = bodyMarkdown;
-      const theme = {
-        colorPalette: extractColorPalette(),
-        semanticTheme: extractSemanticTheme(),
-        visualHierarchy: extractVisualHierarchy(),
-        brandColors: extractBrandColors(),
-        cssFramework: detectCSSFramework(),
-        typography: extractTypographyScale(),
-        accessibility: extractAccessibleTheme(),
-        layoutPatterns: extractLayoutPatterns(),
-        metadata: {
-          title: document.title,
-          url: window.location.href,
-          extractedAt: new Date().toISOString(),
+      return {
+        content: extractTextContent(),
+        theme: {
+          colorPalette: extractColorPalette(),
+          semanticTheme: extractSemanticTheme(),
+          visualHierarchy: extractVisualHierarchy(),
+          brandColors: extractBrandColors(),
+          cssFramework: detectCSSFramework(),
+          typography: extractTypographyScale(),
+          accessibility: extractAccessibleTheme(),
+          layoutPatterns: extractLayoutPatterns(),
+          metadata: {
+            title: document.title,
+            url: window.location.href,
+            extractedAt: new Date().toISOString(),
+          },
         },
       };
-
-      return { content, theme };
     });
-    let responseObject = {
-      style: theme,
-      content: content,
-    };
 
-    if (ENVIRONMENT === 'development') {
-      responseObject['debugPort'] = browserPoolItem.linkedPort || null;
-    }
+    const responseObject: any = { style: theme, content };
+    if (ENVIRONMENT === 'development') responseObject.debugPort = browserPoolItem.linkedPort || null;
     res.json(responseObject);
+
   } catch (error) {
     console.error('Theme extraction error:', error);
-
     if (error instanceof Error) {
       if (error.message.includes('timed out')) {
-        return res.status(408).json({
-          error: 'Request timeout',
-          message: error.message,
-        });
+        return res.status(408).json({ error: 'Request timeout', message: error.message });
       }
-
-      return res.status(500).json({
-        error: 'Failed to extract theme',
-        message: error.message,
-      });
+      return res.status(500).json({ error: 'Failed to extract theme', message: error.message });
     }
-
-    res.status(500).json({
-      error: 'Unknown error occurred during theme extraction',
-    });
+    res.status(500).json({ error: 'Unknown error occurred during theme extraction' });
   } finally {
-    // Cleanup: close page but keep browser in pool
     if (page && !page.isClosed()) {
-      try {
-        await page.close();
-      } catch (closeError) {
-        console.error('Error closing page:', closeError);
-      }
+      try { await page.close(); } catch (e) { console.error('Error closing page:', e); }
     }
-
-    // Browser automatically returns to pool via the pool manager
   }
 });
 
-// Graceful shutdown handling
+// Graceful shutdown
 let isShuttingDown = false;
-
-process.on('SIGINT', async () => {
-  if (isShuttingDown) return;
-  isShuttingDown = true;
-
-  console.log('Received SIGINT. Shutting down gracefully...');
-  await gracefulShutdown();
-});
-
-process.on('SIGTERM', async () => {
-  if (isShuttingDown) return;
-  isShuttingDown = true;
-
-  console.log('Received SIGTERM. Shutting down gracefully...');
-  await gracefulShutdown();
-});
-
 async function gracefulShutdown() {
   console.log('Closing browser pool...');
-  try {
-    await browserPool.closeAll();
-    console.log('Browser pool closed successfully');
-    process.exit(0);
-  } catch (error) {
-    console.error('Error during graceful shutdown:', error);
-    process.exit(1);
-  }
+  try { await browserPool.closeAll(); process.exit(0); }
+  catch (e) { console.error('Shutdown error:', e); process.exit(1); }
 }
-
-// Handle uncaught exceptions
-process.on('uncaughtException', async error => {
-  console.error('Uncaught exception:', error);
-  await gracefulShutdown();
-});
-
-process.on('unhandledRejection', async (reason, promise) => {
-  console.error('Unhandled rejection at:', promise, 'reason:', reason);
-  await gracefulShutdown();
-});
+process.on('SIGINT', async () => { if (!isShuttingDown) { isShuttingDown = true; await gracefulShutdown(); } });
+process.on('SIGTERM', async () => { if (!isShuttingDown) { isShuttingDown = true; await gracefulShutdown(); } });
+process.on('uncaughtException', async e => { console.error('Uncaught:', e); await gracefulShutdown(); });
+process.on('unhandledRejection', async (r) => { console.error('Unhandled rejection:', r); await gracefulShutdown(); });
 
 export default router;

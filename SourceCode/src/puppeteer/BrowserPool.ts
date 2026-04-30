@@ -12,37 +12,37 @@ let BROWSER_INSTANCE_DEBUG_PORT_STARTING = parseInt(
 );
 const ENVIRONMENT = process.env.ENVIRONMENT || 'production';
 const PROXIES = process.env.PROXIES ? process.env.PROXIES.split(',') : [];
-function getChromePath(): string | undefined {
-  if (process.env.NODE_ENV !== 'production') return undefined;
+// function getChromePath(): string | undefined {
+//   if (process.env.NODE_ENV !== 'production') return undefined;
   
-  // All possible Chrome/Chromium locations on Render
-  const possiblePaths = [
-    '/opt/render/.cache/puppeteer/chrome/linux-147.0.7727.57/chrome-linux64/chrome',
-    '/opt/render/project/src/SourceCode/.local-chrome/chrome-linux64/chrome',
-    process.env.PUPPETEER_EXECUTABLE_PATH,
-    '/usr/bin/google-chrome',
-    '/usr/bin/chromium',
-    '/usr/bin/chromium-browser',
-  ].filter(Boolean);
+//   // All possible Chrome/Chromium locations on Render
+//   const possiblePaths = [
+//     '/opt/render/.cache/puppeteer/chrome/linux-147.0.7727.57/chrome-linux64/chrome',
+//     '/opt/render/project/src/SourceCode/.local-chrome/chrome-linux64/chrome',
+//     process.env.PUPPETEER_EXECUTABLE_PATH,
+//     '/usr/bin/google-chrome',
+//     '/usr/bin/chromium',
+//     '/usr/bin/chromium-browser',
+//   ].filter(Boolean);
   
-  for (const path of possiblePaths) {
-    try {
-      const fs = require('fs');
-      if (fs.existsSync(path) && fs.accessSync(path, fs.constants.X_OK) === undefined) {
-        console.log(`Found Chrome at: ${path}`);
-        return path;
-      }
-    } catch (err) {
+//   for (const path of possiblePaths) {
+//     try {
+//       const fs = require('fs');
+//       if (fs.existsSync(path) && fs.accessSync(path, fs.constants.X_OK) === undefined) {
+//         console.log(`Found Chrome at: ${path}`);
+//         return path;
+//       }
+//     } catch (err) {
       
-    }
-  }
+//     }
+//   }
   
-  console.warn('⚠️ No Chrome executable found, relying on Puppeteer default');
-  return undefined;
-}
+//   console.warn('⚠️ No Chrome executable found, relying on Puppeteer default');
+//   return undefined;
+// }
 
 // Then in initialize():
-const chromePath = getChromePath();
+// const chromePath = getChromePath();
 class BrowserPool {
   private pool: BrowserPoolItem[] = [];
   private maxPoolSize: number;
@@ -126,6 +126,7 @@ async initialize(): Promise<void> {
     '--no-sandbox',
     '--disable-setuid-sandbox',
     '--disable-dev-shm-usage',
+    '--single-process',
     '--disable-gpu',
     '--no-first-run',
     '--no-zygote',

@@ -121,20 +121,21 @@ const App: React.FC = () => {
   }, []);
 
   const checkInitialHealth = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/health`);
-      if (res.ok) {
-        setBackendStatus("online");
-        showToast("Backend is online and ready!", "success");
-      } else {
-        setBackendStatus("offline");
-        showToast("Backend is offline. Analysis unavailable.", "error");
-      }
-    } catch {
-      setBackendStatus("offline");
-      showToast("Cannot connect to backend. Please try again later.", "error");
+  try {
+    const res = await fetch(`${API_BASE}/health`);
+    const newStatus = res.ok ? "online" : "offline";
+    
+    if (newStatus !== backendStatus) {
+      showToast(res.ok ? "Server is online!" : "Server went offline.", res.ok ? "success" : "error");
     }
-  };
+    setBackendStatus(newStatus);
+  } catch {
+    if (backendStatus !== "offline") {
+      showToast("Cannot connect to Server.", "error");
+    }
+    setBackendStatus("offline");
+  }
+};
 
   const showToast = (message: string, type: "success" | "error" | "info") => {
     setToast({ message, type });
@@ -267,8 +268,8 @@ const App: React.FC = () => {
                     "pulse-gray"
                   }`} />
                   <span className="wpa-status-text">
-                    {backendStatus === "online" ? "Backend Online" : 
-                     backendStatus === "offline" ? "Backend Offline" : 
+                    {backendStatus === "online" ? "Online" : 
+                     backendStatus === "offline" ? "Offline" : 
                      "Check Status"}
                   </span>
                 </>
@@ -383,14 +384,14 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {errorMsg && !loading && (
+        {/* {errorMsg && !loading && (
           <div className="wpa-error">
             <strong>Analysis failed</strong> — {errorMsg}
             <button className="wpa-error-retry" onClick={() => setErrorMsg("")}>
               Try again
             </button>
           </div>
-        )}
+        )} */}
 
         {data && style && (
           <div className="wpa-results">

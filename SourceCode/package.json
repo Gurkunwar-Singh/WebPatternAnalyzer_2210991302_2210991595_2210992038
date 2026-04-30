@@ -4,7 +4,7 @@
   "description": "TypeScript Express server with Puppeteer integration",
   "main": "dist/server.js",
   "scripts": {
-    "build": "tsc",
+    "build": "rm -rf dist && tsc",
     "start": "node dist/server.js",
     "dev": "nodemon src/server.ts",
     "lint": "eslint \"src/**/*.{js,ts}\"",
